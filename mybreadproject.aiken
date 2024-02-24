@@ -1,0 +1,39 @@
+-- Define the updated bread token contract
+contract breadtoken =
+    -- Define the token structure with balances
+    record token = { balance : Map Address Integer }
+
+    -- Initialize the token with a total supply of 21,000,000 sent to specific addresses
+    entrypoint init() : token =
+        let initialSupply = 21000000
+        let initialBalance = { 
+            addr1q8w7mcy6qx982s2hg2y3thqq5uqney8wv7xjal2x053u57fsqjh7cn72s0zaxus634s373fyqt7xpd34anv0rz5u3rzqntyjaf = 1000000,  -- 1,000,000 tokens to wallet address
+            addr1q847wdn36yxhmrxqxyymdera0hfu6msy9v0yttgdzvpysl974tljzpc9d0hv8vjypwdk2tc08taqtrn5t66apu9npaws34nkw4 = 5000000,  -- 5,000,000 tokens to marketing wallet address
+            Call.caller = initialSupply - 6000000  -- Remaining tokens sent to deployer address
+        }
+        { balance = initialBalance }
+
+    -- Function to handle transactions and apply a 5% tax
+    stateful entrypoint transfer(to: Address, amount: Integer) =
+        let tax = amount * 5 / 100  -- Calculate 5% tax
+        let redistributionTax = tax * 2 / 100  -- Calculate 2% of taxes for redistribution to holders
+        let marketingTax = tax * 2 / 100  -- Calculate 2% of taxes for marketing wallet
+        let teamTax = tax - redistributionTax - marketingTax  -- Calculate remaining 1% for team marketing wallet
+
+        let transferAmount = amount - tax  -- Calculate transfer amount after tax
+
+        let updatedBalance = Map.updateWithDefault(0, to, transferAmount, state.balance) (\oldAmount => oldAmount + transferAmount)
+        put(state{ balance = updatedBalance })
+
+        -- Distribute taxes to holders and wallets
+        let holdersTaxAmount = redistributionTax / Map.size(state.balance)
+        Map.iterate((address, _) => 
+            Chain.spend(address, holdersTaxAmount)
+        , state.balance)
+
+        Chain.spend(addr1q847wdn36yxhmrxqxyymdera0hfu6msy9v0yttgdzvpysl974tljzpc9d0hv8vjypwdk2tc08taqtrn5t66apu9npaws34nkw4, marketingTax)
+        Chain.spend(addr1q8r3mmqql3j4pcahuwthypdu6ygrh37djzg3k3tejy423pldkny7qfngh5nmc3kclf6wqx6r22l4ekpugtqqptyvf6eq03dwx6, teamTax)
+
+    -- Function to get the balance of a specific address
+    entrypoint getBalance(address: Address) : option(Integer) =
+        Map.lookup(address, state.balance)
